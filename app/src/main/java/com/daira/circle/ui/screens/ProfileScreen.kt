@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -22,7 +24,7 @@ import com.daira.circle.ui.theme.Surface2
 import com.daira.circle.ui.theme.TextMuted
 
 @Composable
-fun ProfileScreen() {
+fun ProfileScreen(userEmail: String, onLogout: () -> Unit) {
     Column(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -35,10 +37,10 @@ fun ProfileScreen() {
                 .padding(4.dp)
                 .background(Surface2, CircleShape),
             contentAlignment = Alignment.Center
-        ) { Text("أنت", color = Color.White) }
+        ) { Text(userEmail.take(2).uppercase(), color = Color.White) }
 
         Text("حسابك", style = androidx.compose.material3.MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 10.dp))
-        Text("عضو في الدائرة منذ فبراير ٢٠٢٤", style = androidx.compose.material3.MaterialTheme.typography.labelSmall, color = TextMuted)
+        Text(userEmail, style = androidx.compose.material3.MaterialTheme.typography.labelSmall, color = TextMuted)
 
         Row(
             modifier = Modifier.padding(vertical = 18.dp),
@@ -53,6 +55,16 @@ fun ProfileScreen() {
         SettingRow("الخصوصية والدعوات")
         SettingRow("الإشعارات")
         SettingRow("النسخ الاحتياطي المحلي")
+
+        Button(
+            onClick = onLogout,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 20.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Surface2, contentColor = Color.White)
+        ) {
+            Text("تسجيل الخروج")
+        }
     }
 }
 
