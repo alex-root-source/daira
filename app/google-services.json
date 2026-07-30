@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "38876288224",
+    "project_id": "daira-9da68",
+    "storage_bucket": "daira-9da68.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:38876288224:android:37c1396d9bdf334f5aac85",
+        "android_client_info": {
+          "package_name": "com.daira.circle"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAV-u4-aDlEh89j3BDolR1rMcKKd6GGMdA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
