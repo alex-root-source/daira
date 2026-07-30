@@ -19,6 +19,8 @@ jobs:
 
       - name: تجهيز Gradle
         uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
 
       - name: بناء ملف APK (نسخة تجريبية Debug)
         run: gradle assembleDebug
