@@ -1,5 +1,6 @@
 package com.daira.circle.ui.screens
 
+import android.text.format.DateUtils
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -22,13 +23,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.daira.circle.data.firestore.FriendEntry
+import com.daira.circle.ui.theme.Peach
 import com.daira.circle.ui.theme.Surface2
 import com.daira.circle.ui.theme.TextMuted
+import com.daira.circle.viewmodel.ChatPreviewUi
 import com.daira.circle.viewmodel.SocialViewModel
 
 @Composable
 fun ChatScreen(viewModel: SocialViewModel, onOpenChat: (FriendEntry) -> Unit) {
-    val friends by viewModel.friends.collectAsState()
+    val chatPreviews by viewModel.chatPreviews.collectAsState()
 
     Column(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
@@ -36,7 +39,7 @@ fun ChatScreen(viewModel: SocialViewModel, onOpenChat: (FriendEntry) -> Unit) {
             Text("محادثات حقيقية مع دائرتك", style = androidx.compose.material3.MaterialTheme.typography.bodyMedium, color = TextMuted)
         }
 
-        if (friends.isEmpty()) {
+        if (chatPreviews.isEmpty()) {
             Text(
                 "لسا ما عندك أصدقاء تكلمهم — انضم لدائرة أو شارك رمزك من تبويب \"دائرتك\"",
                 style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
@@ -46,23 +49,57 @@ fun ChatScreen(viewModel: SocialViewModel, onOpenChat: (FriendEntry) -> Unit) {
         }
 
         LazyColumn(contentPadding = PaddingValues(horizontal = 12.dp)) {
-            items(friends, key = { it.uid }) { friend ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onOpenChat(friend) }
-                        .padding(horizontal = 8.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        Modifier.size(46.dp).background(Surface2, CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) { Text(friend.initials, color = Color.White) }
+            items(chatPreviews, key = { it.friend.uid }) { preview ->
+                ChatRow(preview, onClick = { onOpenChat(preview.friend) })
+            }
+        }
+    }
+}
 
-                    Column(modifier = Modifier.padding(horizontal = 12.dp)) {
-                        Text(friend.displayName, style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
-                        Text("اضغط لفتح المحادثة", style = androidx.compose.material3.MaterialTheme.typography.bodyMedium, color = TextMuted)
-                    }
+@Composable
+private fun ChatRow(preview: ChatPreviewUi, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            Modifier.size(46.dp).background(Surface2, CircleShape),
+            contentAlignment = Alignment.Center
+        ) { Text(preview.friend.initials, color = Color.White) }
+
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 12.dp)
+        ) {
+            Text(preview.friend.displayName, style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
+            Text(
+                preview.lastMessageText.ifBlank { "اضغط لبدء المحادثة" },
+                style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+                color = TextMuted,
+                maxLines = 1
+            )
+        }
+
+        Column(horizontalAlignment = Alignment.End) {
+            if (preview.lastMessageAt > 0) {
+                Text(
+                    DateUtils.getRelativeTimeSpanString(preview.lastMessageAt).toString(),
+                    style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
+                    color = TextMuted
+                )
+            }
+            if (preview.unreadForMe > 0) {
+                Box(
+                    modifier = Modifier
+                        .padding(top = 4.dp)
+                        .background(Peach, CircleShape)
+                        .padding(horizontal = 7.dp, vertical = 2.dp)
+                ) {
+                    Text(preview.unreadForMe.toString(), color = Color(0xFF241A16), style = androidx.compose.material3.MaterialTheme.typography.labelSmall)
                 }
             }
         }

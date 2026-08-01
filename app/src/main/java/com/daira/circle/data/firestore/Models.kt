@@ -22,5 +22,14 @@ data class ChatMessage(
     val id: String = "",
     val senderUid: String = "",
     val text: String = "",
-    val timestampMillis: Long = 0L
+    val timestampMillis: Long = 0L,
+    val read: Boolean = false
+)
+
+data class ChatMeta(
+    val otherUid: String = "",
+    val lastMessageText: String = "",
+    val lastMessageAt: Long = 0L,
+    val lastMessageSenderUid: String = "",
+    val unreadForMe: Long = 0L
 )

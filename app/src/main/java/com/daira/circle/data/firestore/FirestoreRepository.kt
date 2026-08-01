@@ -132,13 +132,70 @@ class FirestoreRepository(private val auth: FirebaseAuth) {
         val message = ChatMessage(
             senderUid = myUid,
             text = text,
-            timestampMillis = System.currentTimeMillis()
+            timestampMillis = System.currentTimeMillis(),
+            read = false
         )
         db.collection("chats").document(chatId).collection("messages").add(message).await()
-        // نحدّث وثيقة المحادثة نفسها بمعلومات بسيطة (يفيد لاحقًا لعرض آخر رسالة بسرعة)
+
+        // نحدّث وثيقة المحادثة بآخر رسالة، ونزيد عداد "غير المقروء" للطرف الآخر بمقدار ١
         db.collection("chats").document(chatId).set(
-            mapOf("participants" to listOf(myUid, otherUid), "lastMessageAt" to message.timestampMillis)
+            mapOf(
+                "participants" to listOf(myUid, otherUid),
+                "lastMessageText" to text,
+                "lastMessageAt" to message.timestampMillis,
+                "lastMessageSenderUid" to myUid,
+                "unread" to mapOf(otherUid to com.google.firebase.firestore.FieldValue.increment(1))
+            ),
+            com.google.firebase.firestore.SetOptions.merge()
         ).await()
+    }
+
+    /** يُستدعى فور فتح محادثة: يصفّر عداد غير المقروء لي، ويعلّم رسائل الطرف الآخر كمقروءة */
+    suspend fun markChatRead(otherUid: String) {
+        val chatId = chatIdWith(otherUid)
+
+        db.collection("chats").document(chatId)
+            .set(mapOf("unread" to mapOf(myUid to 0L)), com.google.firebase.firestore.SetOptions.merge())
+            .await()
+
+        val unreadMessages = db.collection("chats").document(chatId).collection("messages")
+            .whereEqualTo("senderUid", otherUid)
+            .whereEqualTo("read", false)
+            .get().await()
+
+        if (!unreadMessages.isEmpty) {
+            db.runBatch { batch ->
+                unreadMessages.documents.forEach { doc -> batch.update(doc.reference, "read", true) }
+            }.await()
+        }
+    }
+
+    suspend fun deleteMessage(otherUid: String, messageId: String) {
+        val chatId = chatIdWith(otherUid)
+        db.collection("chats").document(chatId).collection("messages").document(messageId).delete().await()
+    }
+
+    /** يجلب لحظيًا ملخص كل محادثاتي (آخر رسالة + عداد غير المقروء) مفهرسة حسب الطرف الآخر */
+    fun observeChatsMeta(): Flow<Map<String, ChatMeta>> = callbackFlow {
+        val registration = db.collection("chats")
+            .whereArrayContains("participants", myUid)
+            .addSnapshotListener { snapshot, _ ->
+                val result = snapshot?.documents?.mapNotNull { doc ->
+                    val participants = doc.get("participants") as? List<*> ?: return@mapNotNull null
+                    val otherUid = participants.firstOrNull { it != myUid } as? String ?: return@mapNotNull null
+                    val unreadMap = doc.get("unread") as? Map<*, *>
+                    val unreadForMe = (unreadMap?.get(myUid) as? Long) ?: 0L
+                    otherUid to ChatMeta(
+                        otherUid = otherUid,
+                        lastMessageText = doc.getString("lastMessageText") ?: "",
+                        lastMessageAt = doc.getLong("lastMessageAt") ?: 0L,
+                        lastMessageSenderUid = doc.getString("lastMessageSenderUid") ?: "",
+                        unreadForMe = unreadForMe
+                    )
+                }?.toMap() ?: emptyMap()
+                trySend(result)
+            }
+        awaitClose { registration.remove() }
     }
 
     private fun randomCode(): String {

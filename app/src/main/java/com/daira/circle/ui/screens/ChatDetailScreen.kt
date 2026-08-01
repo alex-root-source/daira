@@ -1,6 +1,9 @@
 package com.daira.circle.ui.screens
 
+import android.text.format.DateFormat
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,7 +20,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.filled.Done
+import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
@@ -32,6 +39,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import com.daira.circle.data.firestore.ChatMessage
 import com.daira.circle.data.firestore.FriendEntry
@@ -40,16 +50,19 @@ import com.daira.circle.ui.theme.Surface
 import com.daira.circle.ui.theme.Surface2
 import com.daira.circle.ui.theme.TextMuted
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ChatDetailScreen(
     friend: FriendEntry,
     myUid: String,
     messages: List<ChatMessage>,
     onBack: () -> Unit,
-    onSend: (String) -> Unit
+    onSend: (String) -> Unit,
+    onDelete: (String) -> Unit
 ) {
     var text by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
+    val clipboard = LocalClipboardManager.current
 
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1)
@@ -80,7 +93,14 @@ fun ChatDetailScreen(
             contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            items(messages, key = { it.id }) { msg -> MessageBubble(msg, isMine = msg.senderUid == myUid) }
+            items(messages, key = { it.id }) { msg ->
+                MessageBubble(
+                    message = msg,
+                    isMine = msg.senderUid == myUid,
+                    onCopy = { clipboard.setText(AnnotatedString(msg.text)) },
+                    onDelete = { onDelete(msg.id) }
+                )
+            }
         }
 
         Row(
@@ -108,25 +128,63 @@ fun ChatDetailScreen(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun MessageBubble(message: ChatMessage, isMine: Boolean) {
+private fun MessageBubble(
+    message: ChatMessage,
+    isMine: Boolean,
+    onCopy: () -> Unit,
+    onDelete: () -> Unit
+) {
+    var showMenu by remember { mutableStateOf(false) }
+    val timeText = remember(message.timestampMillis) {
+        DateFormat.format("h:mm a", message.timestampMillis).toString()
+    }
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (isMine) Arrangement.Start else Arrangement.End
     ) {
-        Box(
-            modifier = Modifier
-                .background(
-                    if (isMine) Peach else Surface,
-                    RoundedCornerShape(16.dp)
-                )
-                .padding(horizontal = 14.dp, vertical = 10.dp)
-        ) {
-            Text(
-                message.text,
-                color = if (isMine) Color(0xFF241A16) else Color.White,
-                style = androidx.compose.material3.MaterialTheme.typography.bodyMedium
-            )
+        Column(horizontalAlignment = if (isMine) Alignment.Start else Alignment.End) {
+            Box {
+                Box(
+                    modifier = Modifier
+                        .background(if (isMine) Peach else Surface, RoundedCornerShape(16.dp))
+                        .combinedClickable(
+                            onClick = {},
+                            onLongClick = { showMenu = true }
+                        )
+                        .padding(horizontal = 14.dp, vertical = 10.dp)
+                ) {
+                    Text(
+                        message.text,
+                        color = if (isMine) Color(0xFF241A16) else Color.White,
+                        style = androidx.compose.material3.MaterialTheme.typography.bodyMedium
+                    )
+                }
+
+                DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                    DropdownMenuItem(text = { Text("نسخ") }, onClick = { onCopy(); showMenu = false })
+                    if (isMine) {
+                        DropdownMenuItem(text = { Text("حذف") }, onClick = { onDelete(); showMenu = false })
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier.padding(top = 3.dp, start = 4.dp, end = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(timeText, style = androidx.compose.material3.MaterialTheme.typography.labelSmall, color = TextMuted)
+                if (isMine) {
+                    Icon(
+                        imageVector = if (message.read) Icons.Filled.DoneAll else Icons.Filled.Done,
+                        contentDescription = if (message.read) "تمت القراءة" else "تم الإرسال",
+                        tint = if (message.read) Peach else TextMuted,
+                        modifier = Modifier.padding(start = 4.dp).size(13.dp)
+                    )
+                }
+            }
         }
     }
 }

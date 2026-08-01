@@ -3,6 +3,7 @@ package com.daira.circle.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.daira.circle.data.firestore.ChatMessage
+import com.daira.circle.data.firestore.ChatMeta
 import com.daira.circle.data.firestore.FirestoreRepository
 import com.daira.circle.data.firestore.FriendEntry
 import com.daira.circle.data.firestore.UserProfile
@@ -11,9 +12,19 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+
+// نموذج جاهز للعرض بشاشة قائمة الدردشات: يجمع بيانات الصديق مع ملخص آخر محادثة
+data class ChatPreviewUi(
+    val friend: FriendEntry,
+    val lastMessageText: String,
+    val lastMessageAt: Long,
+    val unreadForMe: Long
+)
 
 class SocialViewModel : ViewModel() {
 
@@ -25,17 +36,30 @@ class SocialViewModel : ViewModel() {
     val friends: StateFlow<List<FriendEntry>> = repository.observeFriends()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    private val chatsMeta: StateFlow<Map<String, ChatMeta>> = repository.observeChatsMeta()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    val chatPreviews: StateFlow<List<ChatPreviewUi>> = combine(friends, chatsMeta) { friendList, metaMap ->
+        friendList.map { friend ->
+            val meta = metaMap[friend.uid]
+            ChatPreviewUi(
+                friend = friend,
+                lastMessageText = meta?.lastMessageText ?: "",
+                lastMessageAt = meta?.lastMessageAt ?: 0L,
+                unreadForMe = meta?.unreadForMe ?: 0L
+            )
+        }.sortedByDescending { it.lastMessageAt }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     private val _joinFeedback = MutableStateFlow<String?>(null)
     val joinFeedback: StateFlow<String?> = _joinFeedback.asStateFlow()
 
-    // الصديق المفتوحة معه المحادثة حاليًا (null يعني نعرض قائمة المحادثات)
     private val _openChatWith = MutableStateFlow<FriendEntry?>(null)
     val openChatWith: StateFlow<FriendEntry?> = _openChatWith.asStateFlow()
 
     val currentMessages: StateFlow<List<ChatMessage>> = _openChatWith
         .flatMapLatest { friend ->
-            if (friend == null) kotlinx.coroutines.flow.flowOf(emptyList())
-            else repository.observeMessages(friend.uid)
+            if (friend == null) flowOf(emptyList()) else repository.observeMessages(friend.uid)
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -66,6 +90,7 @@ class SocialViewModel : ViewModel() {
 
     fun openChat(friend: FriendEntry) {
         _openChatWith.value = friend
+        viewModelScope.launch { repository.markChatRead(friend.uid) }
     }
 
     fun closeChat() {
@@ -76,6 +101,11 @@ class SocialViewModel : ViewModel() {
         val friend = _openChatWith.value ?: return
         if (text.isBlank()) return
         viewModelScope.launch { repository.sendMessage(friend.uid, text) }
+    }
+
+    fun deleteMessage(messageId: String) {
+        val friend = _openChatWith.value ?: return
+        viewModelScope.launch { repository.deleteMessage(friend.uid, messageId) }
     }
 
     fun myUid(): String = FirebaseAuth.getInstance().currentUser?.uid ?: ""

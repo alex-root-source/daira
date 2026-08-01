@@ -78,7 +78,8 @@ fun DairaApp(userEmail: String, onLogout: () -> Unit) {
             myUid = socialViewModel.myUid(),
             messages = messages,
             onBack = { socialViewModel.closeChat() },
-            onSend = { text -> socialViewModel.sendMessage(text) }
+            onSend = { text -> socialViewModel.sendMessage(text) },
+            onDelete = { messageId -> socialViewModel.deleteMessage(messageId) }
         )
         return
     }
