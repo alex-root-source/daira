@@ -23,7 +23,9 @@ data class ChatMessage(
     val senderUid: String = "",
     val text: String = "",
     val timestampMillis: Long = 0L,
-    val read: Boolean = false
+    val read: Boolean = false,
+    val mediaUrl: String = "",
+    val mediaType: String = "" // "" = نص فقط، "image" = صورة، "video" = فيديو
 )
 
 data class ChatMeta(

@@ -73,12 +73,18 @@ fun DairaApp(userEmail: String, onLogout: () -> Unit) {
     if (openChatWith != null) {
         val friend: FriendEntry = openChatWith!!
         val messages by socialViewModel.currentMessages.collectAsState()
+        val isUploading by socialViewModel.isUploadingMedia.collectAsState()
+        val mediaError by socialViewModel.mediaError.collectAsState()
         ChatDetailScreen(
             friend = friend,
             myUid = socialViewModel.myUid(),
             messages = messages,
+            isUploading = isUploading,
+            mediaError = mediaError,
+            onDismissError = { socialViewModel.clearMediaError() },
             onBack = { socialViewModel.closeChat() },
             onSend = { text -> socialViewModel.sendMessage(text) },
+            onSendMedia = { uri, mediaType -> socialViewModel.sendMedia(uri, mediaType) },
             onDelete = { messageId -> socialViewModel.deleteMessage(messageId) }
         )
         return

@@ -1,8 +1,13 @@
 package com.daira.circle.ui.screens
 
+import android.content.Intent
+import android.net.Uri
 import android.text.format.DateFormat
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,8 +16,10 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -20,9 +27,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.DoneAll
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -38,11 +48,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 import com.daira.circle.data.firestore.ChatMessage
 import com.daira.circle.data.firestore.FriendEntry
 import com.daira.circle.ui.theme.Peach
@@ -56,19 +69,46 @@ fun ChatDetailScreen(
     friend: FriendEntry,
     myUid: String,
     messages: List<ChatMessage>,
+    isUploading: Boolean,
+    mediaError: String?,
+    onDismissError: () -> Unit,
     onBack: () -> Unit,
     onSend: (String) -> Unit,
+    onSendMedia: (Uri, String) -> Unit,
     onDelete: (String) -> Unit
 ) {
     var text by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
     val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
+
+    val mediaPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) {
+            val mimeType = context.contentResolver.getType(uri) ?: ""
+            val mediaType = if (mimeType.startsWith("video")) "video" else "image"
+            onSendMedia(uri, mediaType)
+        }
+    }
 
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1)
     }
 
-    Column(Modifier.fillMaxSize()) {
+    val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
+    LaunchedEffect(mediaError) {
+        if (mediaError != null) {
+            snackbarHostState.showSnackbar(mediaError)
+            onDismissError()
+        }
+    }
+
+    androidx.compose.material3.Scaffold(
+        snackbarHost = { androidx.compose.material3.SnackbarHost(snackbarHostState) },
+        containerColor = androidx.compose.ui.graphics.Color.Transparent
+    ) { scaffoldPadding ->
+    Column(Modifier.fillMaxSize().padding(scaffoldPadding)) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -103,10 +143,29 @@ fun ChatDetailScreen(
             }
         }
 
+        if (isUploading) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = Peach)
+                Text("  جارٍ رفع الملف...", style = androidx.compose.material3.MaterialTheme.typography.labelSmall, color = TextMuted)
+            }
+        }
+
         Row(
             modifier = Modifier.fillMaxWidth().padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            IconButton(onClick = {
+                mediaPicker.launch(
+                    androidx.activity.result.PickVisualMediaRequest(
+                        ActivityResultContracts.PickVisualMedia.ImageAndVideo
+                    )
+                )
+            }) {
+                Icon(Icons.Filled.AttachFile, contentDescription = "إرفاق صورة أو فيديو", tint = TextMuted)
+            }
             OutlinedTextField(
                 value = text,
                 onValueChange = { text = it },
@@ -126,6 +185,7 @@ fun ChatDetailScreen(
             }
         }
     }
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -137,9 +197,11 @@ private fun MessageBubble(
     onDelete: () -> Unit
 ) {
     var showMenu by remember { mutableStateOf(false) }
+    val context = LocalContext.current
     val timeText = remember(message.timestampMillis) {
         DateFormat.format("h:mm a", message.timestampMillis).toString()
     }
+    val hasMedia = message.mediaUrl.isNotBlank()
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -149,22 +211,54 @@ private fun MessageBubble(
             Box {
                 Box(
                     modifier = Modifier
-                        .background(if (isMine) Peach else Surface, RoundedCornerShape(16.dp))
+                        .background(
+                            if (hasMedia) Color.Transparent else if (isMine) Peach else Surface,
+                            RoundedCornerShape(16.dp)
+                        )
                         .combinedClickable(
-                            onClick = {},
+                            onClick = {
+                                if (message.mediaType == "video") {
+                                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                                        setDataAndType(Uri.parse(message.mediaUrl), "video/*")
+                                    }
+                                    context.startActivity(intent)
+                                }
+                            },
                             onLongClick = { showMenu = true }
                         )
-                        .padding(horizontal = 14.dp, vertical = 10.dp)
+                        .padding(if (hasMedia) 0.dp else 14.dp, if (hasMedia) 0.dp else 10.dp)
                 ) {
-                    Text(
-                        message.text,
-                        color = if (isMine) Color(0xFF241A16) else Color.White,
-                        style = androidx.compose.material3.MaterialTheme.typography.bodyMedium
-                    )
+                    when {
+                        message.mediaType == "image" -> AsyncImage(
+                            model = message.mediaUrl,
+                            contentDescription = "صورة",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .width(200.dp)
+                                .height(220.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                        )
+                        message.mediaType == "video" -> Box(
+                            modifier = Modifier
+                                .width(200.dp)
+                                .height(220.dp)
+                                .background(Surface2, RoundedCornerShape(16.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Filled.PlayArrow, contentDescription = "تشغيل الفيديو", tint = Peach, modifier = Modifier.size(44.dp))
+                        }
+                        else -> Text(
+                            message.text,
+                            color = if (isMine) Color(0xFF241A16) else Color.White,
+                            style = androidx.compose.material3.MaterialTheme.typography.bodyMedium
+                        )
+                    }
                 }
 
                 DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-                    DropdownMenuItem(text = { Text("نسخ") }, onClick = { onCopy(); showMenu = false })
+                    if (!hasMedia) {
+                        DropdownMenuItem(text = { Text("نسخ") }, onClick = { onCopy(); showMenu = false })
+                    }
                     if (isMine) {
                         DropdownMenuItem(text = { Text("حذف") }, onClick = { onDelete(); showMenu = false })
                     }

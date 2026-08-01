@@ -1,7 +1,10 @@
 package com.daira.circle.viewmodel
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import android.net.Uri
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.daira.circle.data.cloudinary.CloudinaryUploader
 import com.daira.circle.data.firestore.ChatMessage
 import com.daira.circle.data.firestore.ChatMeta
 import com.daira.circle.data.firestore.FirestoreRepository
@@ -26,9 +29,10 @@ data class ChatPreviewUi(
     val unreadForMe: Long
 )
 
-class SocialViewModel : ViewModel() {
+class SocialViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = FirestoreRepository(FirebaseAuth.getInstance())
+    private val uploader = CloudinaryUploader(application)
 
     val profile: StateFlow<UserProfile?> = repository.observeMyProfile()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
@@ -62,6 +66,12 @@ class SocialViewModel : ViewModel() {
             if (friend == null) flowOf(emptyList()) else repository.observeMessages(friend.uid)
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _isUploadingMedia = MutableStateFlow(false)
+    val isUploadingMedia: StateFlow<Boolean> = _isUploadingMedia.asStateFlow()
+
+    private val _mediaError = MutableStateFlow<String?>(null)
+    val mediaError: StateFlow<String?> = _mediaError.asStateFlow()
 
     fun ensureProfileReady(email: String) {
         viewModelScope.launch { repository.ensureUserProfile(email) }
@@ -101,6 +111,25 @@ class SocialViewModel : ViewModel() {
         val friend = _openChatWith.value ?: return
         if (text.isBlank()) return
         viewModelScope.launch { repository.sendMessage(friend.uid, text) }
+    }
+
+    fun sendMedia(uri: Uri, mediaType: String) {
+        val friend = _openChatWith.value ?: return
+        viewModelScope.launch {
+            _isUploadingMedia.value = true
+            try {
+                val url = uploader.upload(uri, mediaType)
+                repository.sendMediaMessage(friend.uid, url, mediaType)
+            } catch (e: Exception) {
+                _mediaError.value = e.message ?: "فشل رفع الملف، تأكد من اتصالك بالإنترنت"
+            } finally {
+                _isUploadingMedia.value = false
+            }
+        }
+    }
+
+    fun clearMediaError() {
+        _mediaError.value = null
     }
 
     fun deleteMessage(messageId: String) {

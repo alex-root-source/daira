@@ -127,6 +127,31 @@ class FirestoreRepository(private val auth: FirebaseAuth) {
         awaitClose { registration.remove() }
     }
 
+    suspend fun sendMediaMessage(otherUid: String, mediaUrl: String, mediaType: String) {
+        val chatId = chatIdWith(otherUid)
+        val message = ChatMessage(
+            senderUid = myUid,
+            text = "",
+            timestampMillis = System.currentTimeMillis(),
+            read = false,
+            mediaUrl = mediaUrl,
+            mediaType = mediaType
+        )
+        db.collection("chats").document(chatId).collection("messages").add(message).await()
+
+        val previewText = if (mediaType == "video") "🎥 فيديو" else "📷 صورة"
+        db.collection("chats").document(chatId).set(
+            mapOf(
+                "participants" to listOf(myUid, otherUid),
+                "lastMessageText" to previewText,
+                "lastMessageAt" to message.timestampMillis,
+                "lastMessageSenderUid" to myUid,
+                "unread" to mapOf(otherUid to com.google.firebase.firestore.FieldValue.increment(1))
+            ),
+            com.google.firebase.firestore.SetOptions.merge()
+        ).await()
+    }
+
     suspend fun sendMessage(otherUid: String, text: String) {
         val chatId = chatIdWith(otherUid)
         val message = ChatMessage(

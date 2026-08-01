@@ -11,7 +11,7 @@ android {
 
     defaultConfig {
         applicationId = "com.daira.circle"
-        minSdk = 23
+        minSdk = 21
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
@@ -54,4 +54,10 @@ dependencies {
     implementation("com.google.firebase:firebase-auth-ktx")
     implementation("com.google.firebase:firebase-firestore-ktx")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
+
+    // رفع الصور والفيديو لـ Cloudinary (بديل مجاني بدون بطاقة دفع)
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+    // عرض الصور من الإنترنت داخل Compose
+    implementation("io.coil-kt:coil-compose:2.6.0")
 }
