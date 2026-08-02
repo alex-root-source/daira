@@ -85,7 +85,11 @@ fun DairaApp(userEmail: String, onLogout: () -> Unit) {
             onBack = { socialViewModel.closeChat() },
             onSend = { text -> socialViewModel.sendMessage(text) },
             onSendMedia = { uri, mediaType -> socialViewModel.sendMedia(uri, mediaType) },
-            onDelete = { messageId -> socialViewModel.deleteMessage(messageId) }
+            onDelete = { messageId -> socialViewModel.deleteMessage(messageId) },
+            onToggleMute = { socialViewModel.toggleMute(friend) },
+            onClearConversation = { socialViewModel.clearConversation(friend) },
+            onRemoveFriend = { socialViewModel.removeFriend(friend) },
+            onBlockFriend = { socialViewModel.blockFriend(friend) }
         )
         return
     }

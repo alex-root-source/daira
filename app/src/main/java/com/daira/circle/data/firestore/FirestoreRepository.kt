@@ -74,6 +74,7 @@ class FirestoreRepository(private val auth: FirebaseAuth) {
 
         val ownerUid = codeDoc.getString("ownerUid") ?: throw IllegalArgumentException("رمز غير صالح")
         if (ownerUid == myUid) throw IllegalArgumentException("لا يمكنك استخدام رمزك الخاص")
+        if (isBlockedEitherWay(ownerUid)) throw IllegalArgumentException("لا يمكن الانضمام لهذا المستخدم")
 
         val ownerDoc = usersCol.document(ownerUid).get().await()
         val owner = ownerDoc.toObject(UserProfile::class.java)
@@ -99,6 +100,47 @@ class FirestoreRepository(private val auth: FirebaseAuth) {
         }.await()
 
         return owner.displayName
+    }
+
+    /** يتحقق إذا في حظر متبادل بين الطرفين قبل السماح بالانضمام */
+    private suspend fun isBlockedEitherWay(otherUid: String): Boolean {
+        val theyBlockedMe = usersCol.document(otherUid).collection("blocked").document(myUid).get().await().exists()
+        val iBlockedThem = usersCol.document(myUid).collection("blocked").document(otherUid).get().await().exists()
+        return theyBlockedMe || iBlockedThem
+    }
+
+    suspend fun toggleMute(otherUid: String, muted: Boolean) {
+        usersCol.document(myUid).collection("friends").document(otherUid)
+            .update("muted", muted).await()
+    }
+
+    /** إزالة متبادلة — يشيل الصداقة من الطرفين بنفس اللحظة */
+    suspend fun removeFriend(otherUid: String) {
+        db.runBatch { batch ->
+            batch.delete(usersCol.document(myUid).collection("friends").document(otherUid))
+            batch.delete(usersCol.document(otherUid).collection("friends").document(myUid))
+        }.await()
+    }
+
+    /** يحظر المستخدم (يمنع أي انضمام مستقبلي) ويزيل الصداقة الحالية معه */
+    suspend fun blockUser(otherUid: String) {
+        usersCol.document(myUid).collection("blocked").document(otherUid)
+            .set(mapOf("blockedAtMillis" to System.currentTimeMillis())).await()
+        removeFriend(otherUid)
+    }
+
+    /** يمسح كل رسائل المحادثة نهائيًا لدى الطرفين (لا يوجد "مسح من جهتي فقط" حاليًا) */
+    suspend fun clearConversation(otherUid: String) {
+        val chatId = chatIdWith(otherUid)
+        val messages = db.collection("chats").document(chatId).collection("messages").get().await()
+        if (!messages.isEmpty) {
+            db.runBatch { batch ->
+                messages.documents.forEach { doc -> batch.delete(doc.reference) }
+            }.await()
+        }
+        db.collection("chats").document(chatId).update(
+            mapOf("lastMessageText" to "", "lastMessageAt" to 0L)
+        ).await()
     }
 
     fun observeFriends(): Flow<List<FriendEntry>> = callbackFlow {

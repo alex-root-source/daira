@@ -132,6 +132,29 @@ class SocialViewModel(application: Application) : AndroidViewModel(application) 
         _mediaError.value = null
     }
 
+    fun toggleMute(friend: FriendEntry) {
+        viewModelScope.launch { repository.toggleMute(friend.uid, !friend.muted) }
+    }
+
+    /** يزيل الصداقة، ويقفل شاشة المحادثة تلقائيًا لو كانت مفتوحة مع نفس الشخص */
+    fun removeFriend(friend: FriendEntry) {
+        viewModelScope.launch {
+            repository.removeFriend(friend.uid)
+            if (_openChatWith.value?.uid == friend.uid) _openChatWith.value = null
+        }
+    }
+
+    fun blockFriend(friend: FriendEntry) {
+        viewModelScope.launch {
+            repository.blockUser(friend.uid)
+            if (_openChatWith.value?.uid == friend.uid) _openChatWith.value = null
+        }
+    }
+
+    fun clearConversation(friend: FriendEntry) {
+        viewModelScope.launch { repository.clearConversation(friend.uid) }
+    }
+
     fun deleteMessage(messageId: String) {
         val friend = _openChatWith.value ?: return
         viewModelScope.launch { repository.deleteMessage(friend.uid, messageId) }

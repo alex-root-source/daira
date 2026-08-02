@@ -15,7 +15,8 @@ data class FriendEntry(
     val uid: String = "",
     val displayName: String = "",
     val initials: String = "",
-    val sinceLabel: String = ""
+    val sinceLabel: String = "",
+    val muted: Boolean = false
 )
 
 data class ChatMessage(

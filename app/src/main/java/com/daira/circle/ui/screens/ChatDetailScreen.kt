@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.DoneAll
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.CircularProgressIndicator
@@ -75,9 +76,17 @@ fun ChatDetailScreen(
     onBack: () -> Unit,
     onSend: (String) -> Unit,
     onSendMedia: (Uri, String) -> Unit,
-    onDelete: (String) -> Unit
+    onDelete: (String) -> Unit,
+    onToggleMute: () -> Unit,
+    onClearConversation: () -> Unit,
+    onRemoveFriend: () -> Unit,
+    onBlockFriend: () -> Unit
 ) {
     var text by remember { mutableStateOf("") }
+    var showChatMenu by remember { mutableStateOf(false) }
+    var showRemoveConfirm by remember { mutableStateOf(false) }
+    var showBlockConfirm by remember { mutableStateOf(false) }
+    var showClearConfirm by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
@@ -120,10 +129,77 @@ fun ChatDetailScreen(
                 Modifier.size(36.dp).background(Surface2, CircleShape),
                 contentAlignment = Alignment.Center
             ) { Text(friend.initials, color = Color.White) }
-            Text(
-                friend.displayName,
-                style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(start = 10.dp)
+            Column(modifier = Modifier.padding(start = 10.dp).weight(1f)) {
+                Text(friend.displayName, style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
+                if (friend.muted) {
+                    Text("مكتومة", style = androidx.compose.material3.MaterialTheme.typography.labelSmall, color = TextMuted)
+                }
+            }
+
+            Box {
+                IconButton(onClick = { showChatMenu = true }) {
+                    Icon(Icons.Filled.MoreVert, contentDescription = "خيارات المحادثة", tint = Color.White)
+                }
+                DropdownMenu(expanded = showChatMenu, onDismissRequest = { showChatMenu = false }) {
+                    DropdownMenuItem(
+                        text = { Text(if (friend.muted) "إلغاء كتم الإشعارات" else "كتم الإشعارات") },
+                        onClick = { onToggleMute(); showChatMenu = false }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("مسح المحادثة") },
+                        onClick = { showChatMenu = false; showClearConfirm = true }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("إزالة من الدائرة") },
+                        onClick = { showChatMenu = false; showRemoveConfirm = true }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("حظر المستخدم") },
+                        onClick = { showChatMenu = false; showBlockConfirm = true }
+                    )
+                }
+            }
+        }
+
+        if (showClearConfirm) {
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = { showClearConfirm = false },
+                title = { Text("مسح المحادثة؟") },
+                text = { Text("راح تُحذف كل الرسائل نهائيًا لدى الطرفين. هذا الإجراء لا يمكن التراجع عنه.") },
+                confirmButton = {
+                    androidx.compose.material3.TextButton(onClick = { onClearConversation(); showClearConfirm = false }) {
+                        Text("مسح", color = androidx.compose.material3.MaterialTheme.colorScheme.error)
+                    }
+                },
+                dismissButton = { androidx.compose.material3.TextButton(onClick = { showClearConfirm = false }) { Text("إلغاء") } }
+            )
+        }
+
+        if (showRemoveConfirm) {
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = { showRemoveConfirm = false },
+                title = { Text("إزالة ${friend.displayName} من دائرتك؟") },
+                text = { Text("راح يوقف التواصل بينكما فورًا لدى الطرفين. تقدرون تعيدون الصداقة لاحقًا برمز دعوة جديد.") },
+                confirmButton = {
+                    androidx.compose.material3.TextButton(onClick = { onRemoveFriend(); showRemoveConfirm = false }) {
+                        Text("إزالة", color = androidx.compose.material3.MaterialTheme.colorScheme.error)
+                    }
+                },
+                dismissButton = { androidx.compose.material3.TextButton(onClick = { showRemoveConfirm = false }) { Text("إلغاء") } }
+            )
+        }
+
+        if (showBlockConfirm) {
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = { showBlockConfirm = false },
+                title = { Text("حظر ${friend.displayName}؟") },
+                text = { Text("راح تنقطع الصداقة، ولن يقدر ينضم لدائرتك مرة ثانية برمز دعوة جديد إلا إذا رفعت الحظر لاحقًا.") },
+                confirmButton = {
+                    androidx.compose.material3.TextButton(onClick = { onBlockFriend(); showBlockConfirm = false }) {
+                        Text("حظر", color = androidx.compose.material3.MaterialTheme.colorScheme.error)
+                    }
+                },
+                dismissButton = { androidx.compose.material3.TextButton(onClick = { showBlockConfirm = false }) { Text("إلغاء") } }
             )
         }
 

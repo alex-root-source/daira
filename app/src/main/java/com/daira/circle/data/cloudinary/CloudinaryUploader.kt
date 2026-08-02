@@ -20,8 +20,8 @@ import java.util.concurrent.TimeUnit
  * - UPLOAD_PRESET: اسم الـ Upload Preset اللي أنشأته بوضع "Unsigned"
  */
 object CloudinaryConfig {
-    const val CLOUD_NAME = "tawlaww3"
-    const val UPLOAD_PRESET = "Alexander"
+    const val CLOUD_NAME = "ضع_اسم_حسابك_هنا"
+    const val UPLOAD_PRESET = "ضع_اسم_الـ_preset_هنا"
 }
 
 class CloudinaryUploader(private val context: Context) {
