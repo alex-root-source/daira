@@ -14,14 +14,9 @@ import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.TimeUnit
 
-/**
- * ⚠️ عدّل هاتين القيمتين بقيم حسابك الخاص على Cloudinary قبل بناء التطبيق:
- * - CLOUD_NAME: موجود بصفحة الـ Dashboard الرئيسية بحسابك
- * - UPLOAD_PRESET: اسم الـ Upload Preset اللي أنشأته بوضع "Unsigned"
- */
 object CloudinaryConfig {
-    const val CLOUD_NAME = "ضع_اسم_حسابك_هنا"
-    const val UPLOAD_PRESET = "ضع_اسم_الـ_preset_هنا"
+    const val CLOUD_NAME = "tawlaww3"
+    const val UPLOAD_PRESET = "Alexander"
 }
 
 class CloudinaryUploader(private val context: Context) {
@@ -32,7 +27,6 @@ class CloudinaryUploader(private val context: Context) {
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
-    /** يرفع صورة أو فيديو من Uri محلي، ويرجع رابط الملف النهائي بعد الرفع */
     suspend fun upload(uri: Uri, mediaType: String): String = withContext(Dispatchers.IO) {
         val extension = if (mediaType == "video") "mp4" else "jpg"
         val tempFile = File.createTempFile("daira_upload", ".$extension", context.cacheDir)
