@@ -107,7 +107,7 @@
   }
   .topbar h2{ font-size:22px; font-weight:900; }
   .topbar .sub{ font-size:12.5px; color:var(--text-muted); margin-top:2px; }
-  .scroll-area{ flex:1; overflow-y:auto; }
+  .scroll-area{ flex:1; overflow-y:auto; min-height:0; }
 
   /* ============ HOME / FEED ============ */
   .stories{ display:flex; gap:14px; padding:2px 28px 18px; overflow-x:auto; }
@@ -153,9 +153,9 @@
   .empty-hint{ color:var(--text-muted); font-size:13.5px; padding:8px 4px; }
 
   /* ============ CHAT LIST + DETAIL (split view) ============ */
-  #chat-tab{ display:flex; height:100%; }
-  .chat-list-pane{ width:340px; flex-shrink:0; border-left:1px solid var(--divider); display:flex; flex-direction:column; }
-  .chat-detail-pane{ flex:1; display:flex; flex-direction:column; min-width:0; }
+  #chat-tab{ display:flex; height:100%; overflow:hidden; }
+  .chat-list-pane{ width:340px; flex-shrink:0; border-left:1px solid var(--divider); display:flex; flex-direction:column; overflow:hidden; }
+  .chat-detail-pane{ flex:1; display:flex; flex-direction:column; min-width:0; overflow:hidden; }
   .chat-row{ display:flex; align-items:center; gap:12px; padding:12px 20px; cursor:pointer; transition:background .15s; }
   .chat-row:hover{ background:var(--surface); }
   .chat-row.selected{ background:var(--surface); }
@@ -174,7 +174,7 @@
   .icon-btn{ width:36px; height:36px; border-radius:10px; background:var(--surface); border:1px solid var(--divider); display:flex; align-items:center; justify-content:center; color:var(--text); position:relative; }
   .icon-btn svg{ width:17px; height:17px; }
 
-  .messages-area{ flex:1; overflow-y:auto; padding:20px; display:flex; flex-direction:column; gap:10px; }
+  .messages-area{ flex:1; overflow-y:auto; padding:20px; display:flex; flex-direction:column; gap:10px; min-height:0; }
   .msg-row{ display:flex; }
   .msg-row.mine{ justify-content:flex-start; }
   .msg-row.theirs{ justify-content:flex-end; }
