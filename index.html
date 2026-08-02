@@ -171,6 +171,15 @@
   .chat-detail-header{ display:flex; align-items:center; gap:10px; padding:16px 20px; border-bottom:1px solid var(--divider); flex-shrink:0; }
   .chat-detail-header .name{ font-weight:700; font-size:15px; flex:1; }
   .chat-detail-header .muted-lbl{ font-size:11px; color:var(--text-muted); }
+  .chat-detail-header .typing-lbl{ font-size:11px; color:var(--peach); }
+  .notif-banner{
+    display:none; align-items:center; justify-content:space-between; gap:12px;
+    background:var(--surface); border-bottom:1px solid var(--divider);
+    padding:10px 24px; font-size:12.5px; color:var(--text-muted); flex-shrink:0;
+  }
+  .notif-banner.show{ display:flex; }
+  .notif-banner button{ background:var(--peach); color:#241A16; border:none; border-radius:8px; padding:6px 14px; font-size:12px; font-weight:700; flex-shrink:0; }
+  .notif-banner .dismiss{ background:none; color:var(--text-muted); font-size:16px; padding:0 4px; }
   .icon-btn{ width:36px; height:36px; border-radius:10px; background:var(--surface); border:1px solid var(--divider); display:flex; align-items:center; justify-content:center; color:var(--text); position:relative; }
   .icon-btn svg{ width:17px; height:17px; }
 
@@ -293,6 +302,13 @@
     </nav>
 
     <div class="main-area">
+      <div class="notif-banner" id="notif-banner">
+        <span>🔔 فعّل إشعارات المتصفح عشان توصلك الرسائل حتى لو صفحة ثانية مفتوحة</span>
+        <div style="display:flex; align-items:center; gap:6px;">
+          <button id="notif-enable-btn">تفعيل</button>
+          <button class="dismiss" id="notif-dismiss-btn">✕</button>
+        </div>
+      </div>
       <!-- ===== HOME TAB ===== -->
       <div id="home-tab" class="tab-content">
         <div class="topbar"><div><h2>دائرتك</h2><div class="sub" id="home-friend-count">جاري التحميل...</div></div></div>
@@ -409,6 +425,10 @@ let chatsMeta = {};            // otherUid -> {lastMessageText, lastMessageAt, u
 let activeTab = 'home';
 let openChatUid = null;
 let unsubMessages = null;
+let unsubTyping = null;
+let typingTimeout = null;
+let chatsMetaInitialized = false;
+let notificationsEnabled = false;
 let isSignUpMode = false;
 let unsubProfile = null, unsubFriends = null, unsubChats = null;
 
@@ -477,6 +497,7 @@ onAuthStateChanged(auth, async (user) => {
     document.getElementById('app-shell').classList.add('active');
     await ensureUserProfile(user);
     startListeners();
+    initNotificationsBanner();
   } else {
     document.getElementById('auth-screen').style.display = 'flex';
     document.getElementById('app-shell').classList.remove('active');
@@ -643,10 +664,30 @@ function startListeners(){
       map[other] = {
         lastMessageText: data.lastMessageText || '',
         lastMessageAt: data.lastMessageAt || 0,
+        lastMessageSenderUid: data.lastMessageSenderUid || '',
         unreadForMe: (data.unread && data.unread[currentUser.uid]) || 0
       };
     });
+
+    // إشعار متصفح للرسائل الجديدة فقط (نتجاهل أول تحميل حتى ما نزعج المستخدم برسائل قديمة)
+    if (chatsMetaInitialized && notificationsEnabled && Notification.permission === 'granted') {
+      Object.entries(map).forEach(([otherUid, meta]) => {
+        const prev = chatsMeta[otherUid];
+        const isNewer = !prev || meta.lastMessageAt > prev.lastMessageAt;
+        const fromOther = meta.lastMessageSenderUid && meta.lastMessageSenderUid !== currentUser.uid;
+        const shouldNotify = document.hidden || openChatUid !== otherUid;
+        if (isNewer && fromOther && shouldNotify && meta.lastMessageText) {
+          const friend = findFriend(otherUid);
+          if (!friend || friend.muted) return;
+          try {
+            new Notification(friend.displayName, { body: meta.lastMessageText, icon: '' });
+          } catch(e) {}
+        }
+      });
+    }
+
     chatsMeta = map;
+    chatsMetaInitialized = true;
     renderChatList(); updateChatBadge();
   });
 }
@@ -660,6 +701,33 @@ function listenToMessages(otherUid){
     renderMessages(messages);
   });
 }
+
+/* ============================================================
+   BROWSER NOTIFICATIONS
+============================================================ */
+function initNotificationsBanner(){
+  const banner = document.getElementById('notif-banner');
+  const dismissedBefore = localStorage.getItem('daira_notif_dismissed') === '1';
+  if (!('Notification' in window)) return;
+
+  if (Notification.permission === 'granted') {
+    notificationsEnabled = true;
+    return;
+  }
+  if (Notification.permission === 'denied' || dismissedBefore) return;
+
+  banner.classList.add('show');
+}
+document.getElementById('notif-enable-btn').addEventListener('click', async () => {
+  if (!('Notification' in window)) return;
+  const permission = await Notification.requestPermission();
+  notificationsEnabled = permission === 'granted';
+  document.getElementById('notif-banner').classList.remove('show');
+});
+document.getElementById('notif-dismiss-btn').addEventListener('click', () => {
+  localStorage.setItem('daira_notif_dismissed', '1');
+  document.getElementById('notif-banner').classList.remove('show');
+});
 
 /* ============================================================
    RENDER: NAV / TABS
@@ -803,11 +871,14 @@ function openChat(uid){
   renderChatList();
   markChatRead(uid).catch(console.error);
   listenToMessages(uid);
+  listenToTyping(uid);
   renderChatDetailShell();
 }
 function closeChatDetail(){
+  setMyTyping(false);
   openChatUid = null;
   if (unsubMessages) unsubMessages();
+  if (unsubTyping) unsubTyping();
   renderChatList();
   document.getElementById('chat-detail-pane').classList.remove('open');
   document.getElementById('chat-detail-pane').innerHTML = `
@@ -815,6 +886,23 @@ function closeChatDetail(){
       <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
       اختر محادثة من القائمة
     </div>`;
+}
+
+function listenToTyping(otherUid){
+  if (unsubTyping) unsubTyping();
+  const chatId = chatIdWith(otherUid);
+  unsubTyping = onSnapshot(doc(db,'chats', chatId), (snap) => {
+    const typing = snap.data()?.typing;
+    const isTyping = !!(typing && typing[otherUid]);
+    const lbl = document.getElementById('typing-indicator');
+    if (lbl) lbl.textContent = isTyping ? '· يكتب الآن...' : '';
+  });
+}
+
+function setMyTyping(isTyping){
+  if (!openChatUid) return;
+  const chatId = chatIdWith(openChatUid);
+  setDoc(doc(db,'chats', chatId), { typing: { [currentUser.uid]: isTyping } }, { merge:true }).catch(()=>{});
 }
 
 function renderChatDetailShell(){
@@ -828,7 +916,7 @@ function renderChatDetailShell(){
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19l-7-7 7-7M5 12h14"/></svg>
       </button>
       <div class="avatar-sm">${escapeHtml(friend.initials)}</div>
-      <div class="name">${escapeHtml(friend.displayName)} ${friend.muted ? '<span class="muted-lbl">· مكتومة</span>' : ''}</div>
+      <div class="name">${escapeHtml(friend.displayName)} ${friend.muted ? '<span class="muted-lbl">· مكتومة</span>' : ''}<span class="typing-lbl" id="typing-indicator"></span></div>
       <div style="position:relative;">
         <button class="icon-btn" id="chat-menu-btn">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
@@ -885,10 +973,17 @@ function renderChatDetailShell(){
     const text = input.value.trim();
     if (!text) return;
     input.value = '';
+    setMyTyping(false);
+    if (typingTimeout) clearTimeout(typingTimeout);
     try { await sendTextMessage(friend.uid, text); } catch(e){ console.error(e); }
   };
   document.getElementById('send-btn').addEventListener('click', send);
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') send(); });
+  input.addEventListener('input', () => {
+    setMyTyping(true);
+    if (typingTimeout) clearTimeout(typingTimeout);
+    typingTimeout = setTimeout(() => setMyTyping(false), 2500);
+  });
 
   document.getElementById('attach-btn').addEventListener('click', () => document.getElementById('media-input').click());
 }
