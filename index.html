@@ -194,6 +194,30 @@
   .msg-row.mine .content{ background:var(--peach); color:#241A16; }
   .msg-row.theirs .content{ background:var(--surface); color:var(--text); }
   .msg-bubble img{ max-width:260px; max-height:280px; border-radius:14px; display:block; object-fit:cover; }
+  .media-download-btn{
+    position:absolute; top:8px; left:8px; width:30px; height:30px; border-radius:50%;
+    background:rgba(27,20,32,0.65); border:none; display:flex; align-items:center; justify-content:center;
+    color:#fff; opacity:0; transition:opacity .15s;
+  }
+  .media-wrap{ position:relative; display:inline-block; }
+  .media-wrap:hover .media-download-btn{ opacity:1; }
+
+  /* ============ IMAGE EDITOR MODAL ============ */
+  .editor-overlay{ position:fixed; inset:0; background:rgba(0,0,0,0.75); display:none; align-items:center; justify-content:center; z-index:200; flex-direction:column; }
+  .editor-overlay.open{ display:flex; }
+  .editor-box{ background:var(--surface); border-radius:20px; padding:18px; display:flex; flex-direction:column; align-items:center; gap:14px; max-width:94vw; }
+  .editor-canvas-wrap{ position:relative; touch-action:none; }
+  .editor-canvas-wrap canvas{ display:block; border-radius:10px; max-width:78vw; max-height:56vh; }
+  .crop-box{
+    position:absolute; border:2px dashed var(--peach); background:rgba(232,168,124,0.08); touch-action:none;
+  }
+  .crop-handle{ position:absolute; width:18px; height:18px; background:var(--peach); border-radius:50%; bottom:-9px; left:-9px; cursor:nwse-resize; touch-action:none; }
+  .editor-controls{ display:flex; gap:10px; align-items:center; }
+  .editor-controls button{ border:none; border-radius:10px; padding:10px 16px; font-size:13px; font-weight:700; }
+  .editor-rotate-btn{ background:var(--surface-2); color:var(--text); }
+  .editor-cancel-btn{ background:var(--surface-2); color:var(--text-muted); }
+  .editor-confirm-btn{ background:var(--peach); color:#241A16; }
+  .editor-hint{ font-size:11.5px; color:var(--text-muted); }
   .msg-bubble .video-box{
     width:260px; height:200px; background:var(--surface-2); border-radius:14px;
     display:flex; align-items:center; justify-content:center; cursor:pointer;
@@ -386,6 +410,22 @@
   </div>
 
   <input type="file" id="media-input" accept="image/*,video/*" style="display:none;">
+
+  <!-- ============ IMAGE EDITOR MODAL ============ -->
+  <div class="editor-overlay" id="editor-overlay">
+    <div class="editor-box">
+      <div class="editor-canvas-wrap" id="editor-canvas-wrap">
+        <canvas id="editor-canvas"></canvas>
+        <div class="crop-box" id="crop-box"><div class="crop-handle" id="crop-handle"></div></div>
+      </div>
+      <div class="editor-hint">اسحب المربع لتحريكه، واسحب النقطة الصغيرة لتغيير حجم القص</div>
+      <div class="editor-controls">
+        <button class="editor-rotate-btn" id="editor-rotate-btn">↻ تدوير</button>
+        <button class="editor-cancel-btn" id="editor-cancel-btn">إلغاء</button>
+        <button class="editor-confirm-btn" id="editor-confirm-btn">قص وإرسال</button>
+      </div>
+    </div>
+  </div>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
@@ -993,16 +1033,151 @@ document.getElementById('media-input').addEventListener('change', async (e) => {
   e.target.value = '';
   if (!file || !openChatUid) return;
   const mediaType = file.type.startsWith('video') ? 'video' : 'image';
+  if (mediaType === 'image') {
+    openImageEditor(file);
+    return;
+  }
+  await uploadAndSend(file, mediaType);
+});
+
+async function uploadAndSend(fileOrBlob, mediaType){
   const note = document.getElementById('uploading-note');
-  note.style.display = 'flex';
+  if (note) note.style.display = 'flex';
   try {
-    const url = await uploadToCloudinary(file, mediaType);
+    const url = await uploadToCloudinary(fileOrBlob, mediaType);
     await sendMediaMessage(openChatUid, url, mediaType);
   } catch(err){
     alert('فشل رفع الملف: ' + err.message);
   } finally {
-    note.style.display = 'none';
+    if (note) note.style.display = 'none';
   }
+}
+
+/* ============================================================
+   IMAGE EDITOR: rotate + crop before sending
+============================================================ */
+let editorImage = null;
+let editorRotation = 0;
+let editorScaleToNatural = 1;
+let cropState = { x:20, y:20, w:150, h:150 };
+let dragMode = null; // 'move' | 'resize'
+let dragStart = { x:0, y:0 };
+let cropStartState = null;
+
+function openImageEditor(file){
+  const img = new Image();
+  img.onload = () => {
+    editorImage = img;
+    editorRotation = 0;
+    drawEditorCanvas();
+    document.getElementById('editor-overlay').classList.add('open');
+  };
+  img.src = URL.createObjectURL(file);
+}
+
+function drawEditorCanvas(){
+  const canvas = document.getElementById('editor-canvas');
+  const ctx = canvas.getContext('2d');
+  const maxDisplay = 360;
+  const rotated = editorRotation % 180 !== 0;
+  const naturalW = editorImage.naturalWidth, naturalH = editorImage.naturalHeight;
+  const dispNaturalW = rotated ? naturalH : naturalW;
+  const dispNaturalH = rotated ? naturalW : naturalH;
+  const scale = Math.min(maxDisplay / dispNaturalW, maxDisplay / dispNaturalH, 1);
+  const dispW = Math.round(dispNaturalW * scale);
+  const dispH = Math.round(dispNaturalH * scale);
+  editorScaleToNatural = 1 / scale;
+
+  canvas.width = dispW; canvas.height = dispH;
+  ctx.save();
+  ctx.translate(dispW/2, dispH/2);
+  ctx.rotate(editorRotation * Math.PI/180);
+  if (rotated) ctx.drawImage(editorImage, -dispH/2, -dispW/2, dispH, dispW);
+  else ctx.drawImage(editorImage, -dispW/2, -dispH/2, dispW, dispH);
+  ctx.restore();
+
+  // إعادة تعيين مربع القص ليغطي أغلب الصورة افتراضيًا
+  const inset = 0.08;
+  cropState = { x: dispW*inset, y: dispH*inset, w: dispW*(1-inset*2), h: dispH*(1-inset*2) };
+  renderCropBox(dispW, dispH);
+}
+
+function renderCropBox(boundW, boundH){
+  const box = document.getElementById('crop-box');
+  box.style.left = cropState.x + 'px';
+  box.style.top = cropState.y + 'px';
+  box.style.width = cropState.w + 'px';
+  box.style.height = cropState.h + 'px';
+  box.dataset.boundW = boundW; box.dataset.boundH = boundH;
+}
+
+function clampCrop(boundW, boundH){
+  cropState.w = Math.max(30, Math.min(cropState.w, boundW - cropState.x));
+  cropState.h = Math.max(30, Math.min(cropState.h, boundH - cropState.y));
+  cropState.x = Math.max(0, Math.min(cropState.x, boundW - cropState.w));
+  cropState.y = Math.max(0, Math.min(cropState.y, boundH - cropState.h));
+}
+
+document.getElementById('crop-box').addEventListener('pointerdown', (e) => {
+  if (e.target.id === 'crop-handle') return;
+  dragMode = 'move';
+  dragStart = { x:e.clientX, y:e.clientY };
+  cropStartState = { ...cropState };
+  e.target.setPointerCapture(e.pointerId);
+});
+document.getElementById('crop-handle').addEventListener('pointerdown', (e) => {
+  e.stopPropagation();
+  dragMode = 'resize';
+  dragStart = { x:e.clientX, y:e.clientY };
+  cropStartState = { ...cropState };
+  e.target.setPointerCapture(e.pointerId);
+});
+document.getElementById('editor-canvas-wrap').addEventListener('pointermove', (e) => {
+  if (!dragMode) return;
+  const canvas = document.getElementById('editor-canvas');
+  const boundW = canvas.width, boundH = canvas.height;
+  const dx = e.clientX - dragStart.x, dy = e.clientY - dragStart.y;
+  if (dragMode === 'move'){
+    cropState.x = cropStartState.x + dx;
+    cropState.y = cropStartState.y + dy;
+  } else if (dragMode === 'resize'){
+    cropState.w = cropStartState.w + dx;
+    cropState.h = cropStartState.h + dy;
+  }
+  clampCrop(boundW, boundH);
+  renderCropBox(boundW, boundH);
+});
+['pointerup','pointercancel'].forEach(evt => {
+  document.getElementById('editor-canvas-wrap').addEventListener(evt, () => { dragMode = null; });
+});
+
+document.getElementById('editor-rotate-btn').addEventListener('click', () => {
+  editorRotation = (editorRotation + 90) % 360;
+  drawEditorCanvas();
+});
+document.getElementById('editor-cancel-btn').addEventListener('click', closeImageEditor);
+function closeImageEditor(){
+  document.getElementById('editor-overlay').classList.remove('open');
+  editorImage = null;
+}
+document.getElementById('editor-confirm-btn').addEventListener('click', async () => {
+  const canvas = document.getElementById('editor-canvas');
+  const outW = Math.round(cropState.w * editorScaleToNatural);
+  const outH = Math.round(cropState.h * editorScaleToNatural);
+  const outCanvas = document.createElement('canvas');
+  outCanvas.width = outW; outCanvas.height = outH;
+  const outCtx = outCanvas.getContext('2d');
+  outCtx.drawImage(
+    canvas,
+    cropState.x, cropState.y, cropState.w, cropState.h,
+    0, 0, outW, outH
+  );
+  closeImageEditor();
+  outCanvas.toBlob(async (blob) => {
+    if (!blob) return;
+    const file = new File([blob], 'photo.jpg', { type:'image/jpeg' });
+    await uploadAndSend(file, 'image');
+  }, 'image/jpeg', 0.92);
 });
 
 function renderMessages(messages){
@@ -1013,11 +1188,18 @@ function renderMessages(messages){
     const time = new Date(m.timestampMillis).toLocaleTimeString('ar', { hour:'2-digit', minute:'2-digit' });
     let content = '';
     if (m.mediaType === 'image'){
-      content = `<img src="${m.mediaUrl}" alt="صورة">`;
+      content = `<div class="media-wrap"><img src="${m.mediaUrl}" alt="صورة">
+        <button class="media-download-btn" onclick="window.__downloadMsg('${m.mediaUrl}','image')" title="تحميل">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 21h16"/></svg>
+        </button></div>`;
     } else if (m.mediaType === 'video'){
-      content = `<div class="video-box" onclick="window.open('${m.mediaUrl}','_blank')">
-        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="var(--peach)" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m10 8 6 4-6 4V8Z"/></svg>
-      </div>`;
+      content = `<div class="media-wrap">
+        <div class="video-box" onclick="window.open('${m.mediaUrl}','_blank')">
+          <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="var(--peach)" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m10 8 6 4-6 4V8Z"/></svg>
+        </div>
+        <button class="media-download-btn" onclick="window.__downloadMsg('${m.mediaUrl}','video')" title="تحميل">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 21h16"/></svg>
+        </button></div>`;
     } else {
       content = `<div class="content">${escapeHtml(m.text)}</div>`;
     }
@@ -1038,6 +1220,23 @@ function renderMessages(messages){
 }
 window.__copyMsg = (text) => { navigator.clipboard.writeText(text); };
 window.__deleteMsg = (id) => { if (openChatUid) deleteMessageDoc(openChatUid, id).catch(console.error); };
+window.__downloadMsg = async (url, type) => {
+  try {
+    const res = await fetch(url);
+    const blob = await res.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = `daira-${Date.now()}.${type === 'video' ? 'mp4' : 'jpg'}`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(blobUrl);
+  } catch(e) {
+    // خطة بديلة لو منع المتصفح جلب الملف مباشرة (نادر) — يفتحه بتبويب جديد ليحفظه المستخدم يدويًا
+    window.open(url, '_blank');
+  }
+};
 
 /* ============================================================
    CONFIRM MODAL
